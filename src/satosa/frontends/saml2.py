@@ -8,6 +8,7 @@ import logging
 import re
 from base64 import urlsafe_b64decode
 from base64 import urlsafe_b64encode
+from base64 import b64encode
 from urllib.parse import quote
 from urllib.parse import quote_plus
 from urllib.parse import unquote
@@ -16,7 +17,9 @@ from urllib.parse import urlparse
 from http.cookies import SimpleCookie
 
 from saml2 import SAMLError, xmldsig
-from saml2.config import IdPConfig
+from saml2 import BINDING_HTTP_POST
+from saml2.client_base import Base
+from saml2.config import IdPConfig, SPConfig
 from saml2.extension.mdui import NAMESPACE as UI_NAMESPACE
 from saml2.metadata import create_metadata_string
 from saml2.saml import NameID
@@ -28,6 +31,7 @@ from saml2.samlp import name_id_policy_from_string
 from saml2.server import Server
 
 from satosa.base import SAMLBaseModule
+from satosa.backends.saml2 import SAMLBackend
 from satosa.context import Context
 from .base import FrontendModule
 from ..response import Response
@@ -349,6 +353,8 @@ class SAMLFrontend(FrontendModule, SAMLBaseModule):
 
         resp_args = request_state["resp_args"]
         sp_entity_id = resp_args["sp_entity_id"]
+        if resp_args["in_response_to"].startswith("UNSOLICITED"):
+            resp_args["in_response_to"] = None
         internal_response.attributes = self._filter_attributes(
             idp, internal_response, context)
         ava = self.converter.from_internal(
@@ -361,7 +367,7 @@ class SAMLFrontend(FrontendModule, SAMLBaseModule):
         else:
             auth_info["class_ref"] = internal_response.auth_info.auth_class_ref
 
-        auth_info["authn_auth"] = internal_response.auth_info.issuer
+        #auth_info["authn_auth"] = internal_response.auth_info.issuer
 
         if self.custom_attribute_release:
             custom_release = util.get_dict_defaults(
@@ -403,10 +409,10 @@ class SAMLFrontend(FrontendModule, SAMLBaseModule):
         encrypt_assertion = sp_policy.get('encrypt_assertion', False)
         encrypted_advice_attributes = sp_policy.get('encrypted_advice_attributes', False)
 
-        signing_algorithm = idp_conf.get('signing_algorithm')
-        digest_algorithm = idp_conf.get('digest_algorithm')
-        sign_alg_attr = sp_policy.get('sign_alg', 'SIG_RSA_SHA256')
-        digest_alg_attr = sp_policy.get('digest_alg', 'DIGEST_SHA256')
+        signing_algorithm = idp_conf.get('signing_algorithm', xmldsig.SIG_RSA_SHA256)
+        digest_algorithm = idp_conf.get('digest_algorithm', xmldsig.DIGEST_SHA256)
+        sign_alg_attr = sp_policy.get('sign_alg')
+        digest_alg_attr = sp_policy.get('digest_alg')
 
         # Construct arguments for method create_authn_response
         # on IdP Server instance
@@ -1251,3 +1257,232 @@ class SAMLVirtualCoFrontend(SAMLFrontend):
         # authentication request dynamically create an IdP instance.
         self.idp = self._create_co_virtual_idp(context, co_name=co_name)
         return super()._metadata_endpoint(context=context);
+
+class SAMLUnsolicitedFrontend(SAMLFrontend):
+    """
+    Frontend module that provides all of the functionality of the base class
+    SAMLFrontend but also provides a proprietary endpoint for initiating
+    unsolicted SAML flows. The unsolicited SAML flows are not part of any
+    SAML standard.
+    """
+
+    KEY_ENDPOINT = "endpoint"
+    KEY_DISCO_URL_WHITE = "discovery_service_url_whitelist"
+    KEY_DISCO_POLICY_WHITE = "discovery_service_policy_whitelist"
+    KEY_QUERY_IDP = "authId"
+    KEY_QUERY_SP = "providerId"
+    KEY_QUERY_ACS = "shire"
+    KEY_QUERY_RELAY = "target"
+    KEY_QUERY_DISCO_URL = "discoveryURL"
+    KEY_QUERY_DISCO_POLICY = "discoveryPolicy"
+    #KEY_SAML_DISCOVERY_SERVICE_URL = SAMLBackend.KEY_SAML_DISCOVERY_SERVICE_URL
+    #KEY_SAML_DISCOVERY_SERVICE_POLICY = SAMLBackend.KEY_SAML_DISCOVERY_SERVICE_POLICY
+    KEY_UNSOLICITED = "unsolicited"
+    KEY_ALLOWED_RELAY_STATE_URLS = "allowed_relay_state_urls"
+    KEY_ALLOWED_RELAY_STATE_URLS_ENTITY_ID = "entityid"
+
+    def __init__(
+        self, auth_req_callback_func, internal_attributes, config, base_url, name
+    ):
+        super().__init__(
+            auth_req_callback_func, internal_attributes, config, base_url, name
+        )
+
+    def register_endpoints(self, backend_names):
+        """
+        See super class
+        satosa.frontends.saml2.SAMLFrontend#register_endpoints
+
+        :type providers: list[str]
+        :rtype: list[(str, ((satosa.context.Context, Any)
+                      -> satosa.response.Response, Any))]
+        :param providers: A list of backend providers
+        :return: A list of endpoint/method pairs
+        """
+        url_map = super().register_endpoints(backend_names)
+
+        path = urlparse(self.config[self.KEY_UNSOLICITED].get(self.KEY_ENDPOINT)).path
+
+        for backend in backend_names:
+            pat = "(^{})/{}$".format(backend, path)
+            url_map.append((pat, self.unsolicited_endpoint))
+
+        logger.debug("URL maps to be registered are {}".format(url_map))
+
+        return url_map
+
+    def unsolicited_endpoint(self, context):
+        """
+        Endpoint to process unsolicited SAML flows. The unsolicited flows
+        are proprietary and not defined as part of any SAML standard.
+
+        :type context: satosa.context.Context
+        :rtype: satosa.response.Response
+
+        :param context: The current context
+        :return: response
+        """
+        request = context.request
+
+        target_idp_entity_id = request.get(self.KEY_QUERY_IDP, None)
+        target_sp_entity_id = request.get(self.KEY_QUERY_SP, None)
+        target_sp_acs_url = request.get(self.KEY_QUERY_ACS, None)
+        target_sp_relay_state_url = request.get(self.KEY_QUERY_RELAY, None)
+        requested_disco_url = request.get(self.KEY_QUERY_DISCO_URL, None)
+        requested_disco_policy = request.get(self.KEY_QUERY_DISCO_POLICY, None)
+
+        logger.debug(
+            "Unsolicited target authenticating IdP is {}".format(target_idp_entity_id)
+        )
+        logger.debug("Unsolicited target SP is {}".format(target_sp_entity_id))
+        logger.debug("Unsolicited ACS URL is {}".format(target_sp_acs_url))
+        logger.debug("Unsolicited relay state is {}".format(target_sp_relay_state_url))
+        logger.debug("Unsolicted discovery URL is {}".format(requested_disco_url))
+        logger.debug("Unsolicted discovery policy is {}".format(requested_disco_policy))
+
+        # We only proceed with known federated SPs.
+        try:
+            if target_sp_entity_id is None:
+                raise KeyError
+            target_sp_metadata = self.idp.metadata[target_sp_entity_id]
+        except KeyError:
+            msg = "Target SP with entityID '{}' is unknown in metadata".format(target_sp_entity_id)
+            logger.error(msg)
+            raise SATOSABadRequestError(msg)
+
+        # The SP ACS URL if input must match one from the trusted metadata.
+        # We assume the SP only has one SPSSODescriptor element in metadata.
+        acs_ob_list = target_sp_metadata.get("spsso_descriptor", [{}])[0].get(
+            "assertion_consumer_service", [{}]
+        )
+        acs_locations = [acs_ob["location"] for acs_ob in acs_ob_list]
+
+        if target_sp_acs_url:
+            if target_sp_acs_url not in acs_locations:
+                msg = "Target ACS URL {} not allowed".format(target_sp_acs_url)
+                logger.error(msg)
+                raise SATOSABadRequestError(msg)
+        else:
+            for acs_ob in acs_ob_list:
+                # We assume the SP has HTTP_POST binding and we simply
+                # take the first one we find.
+                if acs_ob["binding"] == BINDING_HTTP_POST:
+                    target_sp_acs_url = acs_ob["location"]
+                    logger.debug("Unsolicited found SP ACS URL {}".format(target_sp_acs_url))
+                    break
+
+        if not target_sp_acs_url:
+            msg = "No ACS for SP with entityID {}".format(target_sp_entity_id)
+            logger.error(msg)
+            raise SATOSABadRequestError(msg)
+
+        # If provided the exact scheme, host, and port for relay state URL
+        # must match that of the target SP ACS URL, or must be in the allowed_relay_state_url list form the config
+        allowed_relay_state_urls = [target_sp_acs_url]
+        try:
+            allowed_relay_state_urls.extend(self.config[self.KEY_UNSOLICITED].get(self.KEY_ALLOWED_RELAY_STATE_URLS).get(target_sp_entity_id))
+        except KeyError:
+            logger.debug('Did not find {} for entity id {} in config.'.format(self.KEY_ALLOWED_RELAY_STATE_URLS, target_sp_entity_id))
+
+        logger.debug ('Found allowed_relay_state_urls: {}'.format(allowed_relay_state_urls))
+
+        target = urlparse(target_sp_relay_state_url)
+        relay_state_permitted = False
+        logger.debug('Parsed target_sp_relay_state_url: {}, {}, {}'.format(target.scheme, target.netloc, target.port))
+        for allowed_relay_url in allowed_relay_state_urls:
+            parsed = urlparse(allowed_relay_url)
+            logger.debug('Parsed allowed_relay_state_url: {}, {}, {}'.format(parsed.scheme, parsed.netloc, parsed.port))
+            if ( target.scheme == parsed.scheme
+                and target.netloc == parsed.netloc
+                and target.port == parsed.port):
+                relay_state_permitted = True
+
+        if not relay_state_permitted:
+                msg = "RelayState {} is not permitted".format(target_sp_relay_state_url)
+                logger.error(msg)
+                raise SATOSABadRequestError(msg)
+
+        # Create a temporary SP configuration to represent the target SP.
+        acs = [[target_sp_acs_url, BINDING_HTTP_POST]]
+        sp_config_dict = {
+            "entityid": target_sp_entity_id,
+            "service": {"sp": {"endpoints": {"assertion_consumer_service": acs}}},
+        }
+        sp_config = SPConfig().load(sp_config_dict, False)
+
+        # Create a temporary SP object and use it to create a authn request
+        # with a destination of our own SingleSignOnService location with
+        # HTTP-POST binding.
+        target_sp = Base(sp_config)
+
+        destination = None
+        endpoints = self.idp.config.getattr("endpoints")
+        sso_service_list = endpoints["single_sign_on_service"]
+        for location, binding in sso_service_list:
+            if binding == BINDING_HTTP_POST:
+                destination = location
+                break
+
+        if not destination:
+            msg = (
+                "Could not determine location for SingleSignOnService "
+                "with HTTP-POST binding"
+            )
+            logger.error(msg)
+            raise SATOSAError(msg)
+
+        logger.debug("Unsolicited using destination {}".format(destination))
+
+        req_id, authn_request = target_sp.create_authn_request(destination, message_id=f"UNSOLICITED")
+
+        # Convert the authn request object to an encoded set of bytes.
+        authn_request_str = "{}".format(authn_request)
+        logger.debug("Unsolicted authn request is {}".format(authn_request_str))
+        authn_request_bytes = authn_request_str.encode("utf-8")
+        authn_request_encoded = b64encode(authn_request_bytes)
+
+        # Add the authn request to the context as if it arrived through
+        # an endpoint.
+        context.request["SAMLRequest"] = authn_request_encoded
+
+        # Add the relay state to the context if provided.
+        if target_sp_relay_state_url:
+            context.request["RelayState"] = target_sp_relay_state_url
+
+        # If provided and is whitelisted set the discovery service to use.
+        if requested_disco_url:
+            allowed = self.config[self.KEY_UNSOLICITED].get(self.KEY_DISCO_URL_WHITE)
+            if requested_disco_url not in allowed:
+                msg = "Discovery service URL {} not allowed"
+                msg = msg.format(requested_disco_url)
+                logger.error(msg)
+                raise SATOSAError(msg)
+
+            context.decorate(self.KEY_SAML_DISCOVERY_SERVICE_URL, requested_disco_url)
+
+        # If provided and is whitelisted set the discovery policy to use.
+        if requested_disco_policy:
+            allowed = self.config[self.KEY_UNSOLICITED].get(self.KEY_DISCO_POLICY_WHITE)
+            if requested_disco_policy not in allowed:
+                msg = "Discovery service policy {} not allowed"
+                msg = msg.format(requested_disco_policy)
+                logger.error(msg)
+                raise SATOSAError(msg)
+
+            context.decorate(
+                self.KEY_SAML_DISCOVERY_SERVICE_POLICY, requested_disco_policy
+            )
+
+        # If provided and known in the SAML metadata set the entityID for
+        # the IdP to use for authentication.
+        if target_idp_entity_id:
+            if target_idp_entity_id in self.idp.metadata:
+                context.decorate(Context.KEY_TARGET_ENTITYID, target_idp_entity_id)
+            else:
+                msg = "Target IdP with entityID {} is unknown in metadata"
+                msg = msg.format(target_idp_entity_id)
+                logger.error(msg)
+                raise SATOSAError(msg)
+
+        # Handle the authn request use the base class.
+        return self._handle_authn_request(context, BINDING_HTTP_POST, self.idp)

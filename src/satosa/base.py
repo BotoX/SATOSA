@@ -264,13 +264,16 @@ class SATOSABase(object):
         """
         try:
             self._load_state(context)
+            state_hash = hash(context.state)
             spec = self.module_router.endpoint_routing(context)
             resp = self._run_bound_endpoint(context, spec)
-            self._save_state(resp, context)
+            if hash(context.state) != state_hash:
+                self._save_state(resp, context)
         except SATOSABadRequestError as e:
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Bad Request",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -285,6 +288,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Missing SATOSA State",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -299,6 +303,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "SATOSA Authentication Flow Error",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -313,6 +318,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "URL-path is not bound to any endpoint function",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -327,6 +333,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Uncaught SATOSA error",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -341,6 +348,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Configuration error: unknown system entity",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -355,6 +363,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Uncaught exception",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }

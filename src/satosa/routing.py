@@ -51,6 +51,8 @@ class ModuleRouter(object):
         if micro_services:
             self.micro_services = {instance.name: {"instance": instance, "endpoints": instance.register_endpoints()}
                                    for instance in micro_services}
+            for instance in micro_services:
+                instance.router = self
         else:
             self.micro_services = {}
 
