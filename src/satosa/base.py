@@ -264,9 +264,11 @@ class SATOSABase(object):
         """
         try:
             self._load_state(context)
+            state_hash = hash(context.state)
             spec = self.module_router.endpoint_routing(context)
             resp = self._run_bound_endpoint(context, spec)
-            self._save_state(resp, context)
+            if hash(context.state) != state_hash:
+                self._save_state(resp, context)
         except SATOSABadRequestError as e:
             error_id = uuid.uuid4().urn
             msg = {

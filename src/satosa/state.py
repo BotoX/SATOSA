@@ -127,6 +127,10 @@ class State(UserDict):
         """
         return copy.deepcopy(self.data)
 
+    def __hash__(self):
+        urlstate_data = json.dumps(self.data, sort_keys=True)
+        return hash((urlstate_data, self.delete))
+
 
 def state_to_cookie(
     state: State,
