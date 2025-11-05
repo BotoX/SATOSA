@@ -403,10 +403,10 @@ class SAMLFrontend(FrontendModule, SAMLBaseModule):
         encrypt_assertion = sp_policy.get('encrypt_assertion', False)
         encrypted_advice_attributes = sp_policy.get('encrypted_advice_attributes', False)
 
-        signing_algorithm = idp_conf.get('signing_algorithm')
-        digest_algorithm = idp_conf.get('digest_algorithm')
-        sign_alg_attr = sp_policy.get('sign_alg', 'SIG_RSA_SHA256')
-        digest_alg_attr = sp_policy.get('digest_alg', 'DIGEST_SHA256')
+        signing_algorithm = idp_conf.get('signing_algorithm', xmldsig.SIG_RSA_SHA256)
+        digest_algorithm = idp_conf.get('digest_algorithm', xmldsig.DIGEST_SHA256)
+        sign_alg_attr = sp_policy.get('sign_alg')
+        digest_alg_attr = sp_policy.get('digest_alg')
 
         # Construct arguments for method create_authn_response
         # on IdP Server instance
