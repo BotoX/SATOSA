@@ -273,6 +273,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Bad Request",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -287,6 +288,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Missing SATOSA State",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -301,6 +303,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "SATOSA Authentication Flow Error",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -315,6 +318,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "URL-path is not bound to any endpoint function",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -329,6 +333,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Uncaught SATOSA error",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -343,6 +348,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Configuration error: unknown system entity",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
@@ -357,6 +363,7 @@ class SATOSABase(object):
             error_id = uuid.uuid4().urn
             msg = {
                 "message": "Uncaught exception",
+                "request": f"{context.request_method} {context.request_uri}",
                 "error": str(e),
                 "error_id": error_id,
             }
