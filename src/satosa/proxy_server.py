@@ -42,9 +42,9 @@ def unpack_post(environ, content_length):
     """
     post_body = environ['wsgi.input'].read(content_length).decode("utf-8")
     data = None
-    if "application/x-www-form-urlencoded" in environ["CONTENT_TYPE"]:
+    if "application/x-www-form-urlencoded" in environ.get("CONTENT_TYPE", ""):
         data = parse_query_string(post_body)
-    elif "application/json" in environ["CONTENT_TYPE"]:
+    elif "application/json" in environ.get("CONTENT_TYPE", ""):
         data = json.loads(post_body)
 
     logline = "unpack_post:: {}".format(data)
