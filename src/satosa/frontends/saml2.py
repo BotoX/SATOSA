@@ -391,8 +391,8 @@ class SAMLFrontend(FrontendModule, SAMLBaseModule):
         name_id = None if not nameid_value else NameID(
             text=nameid_value,
             format=nameid_format,
-            sp_name_qualifier=None,
-            name_qualifier=None,
+            sp_name_qualifier=sp_entity_id,
+            name_qualifier=idp.config.entityid,
         )
 
         msg = "returning attributes {}".format(json.dumps(ava))
