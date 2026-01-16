@@ -15,6 +15,7 @@ class MicroService(object):
         self.name = name
         self.base_url = base_url
         self.next = None
+        self.router = None
 
     def process(self, context, data):
         """
