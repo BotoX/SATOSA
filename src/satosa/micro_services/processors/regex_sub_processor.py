@@ -1,4 +1,4 @@
-from ..attribute_processor import AttributeProcessorError, AttributeProcessorWarning
+from ..attribute_processor import AttributeProcessorError, AttributeProcessorDebug
 from .base_processor import BaseProcessor
 import re
 import logging
@@ -36,7 +36,7 @@ class RegexSubProcessor(BaseProcessor):
         values = attributes.get(attribute, [])
         new_values = []
         if not values:
-            raise AttributeProcessorWarning("Cannot apply regex_sub to {}, it has no values".format(attribute))
+            raise AttributeProcessorDebug("Cannot apply regex_sub to {}, it has no values".format(attribute))
         for value in values:
             new_values.append(re.sub(r'{}'.format(regex_sub_match_pattern), r'{}'.format(regex_sub_replace_pattern), value))
             logger.debug('regex_sub new_values: {}'.format(new_values))

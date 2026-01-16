@@ -58,10 +58,16 @@ class AttributeProcessor(ResponseMicroService):
 
                 try:
                     instance.process(data, attribute, **kwargs)
+                except AttributeProcessorDebug as d:
+                    satosa_logging(logger, logging.DEBUG, d, context.state)
                 except AttributeProcessorWarning as w:
                     satosa_logging(logger, logging.WARNING, w, context.state)
 
         return super().process(context, data)
+
+
+class AttributeProcessorDebug(SATOSAError):
+    pass
 
 
 class AttributeProcessorWarning(SATOSAError):
