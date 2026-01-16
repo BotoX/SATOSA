@@ -58,6 +58,10 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
             logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
             logger.debug(logline)
 
+            for idx, value in enumerate(values):
+                if isinstance(value, dict):
+                    values[idx] = value['text']
+
             # If one of the configured attribute names is name_id then if there is also a configured
             # name_id_format add the value for the NameID of that format if it was asserted by the IdP
             # or else add the value None.
@@ -117,7 +121,10 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
                 values.append(scope)
 
             # Concatenate all values to create the primary identifier.
-            value = ''.join(values)
+            if values:
+                value = ''.join(values)
+            else: # subject_id = None: pysaml2 generates transient NameID
+                value = None
             break
 
         return value
@@ -129,10 +136,6 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
         # Initialize the configuration to use as the default configuration
         # that is passed during initialization.
         config = self.config
-
-        msg = "{} Using default configuration {}".format(logprefix, config)
-        logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
-        logger.debug(logline)
 
         # Find the entityID for the SP that initiated the flow
         try:
@@ -171,6 +174,25 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
             logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
             logger.debug(logline)
 
+        frontend = context.state['ROUTER']
+        frontend = self.router.frontends[frontend]['instance']
+        md = frontend.idp.metadata[data.requester]
+        md = md.get("spsso_descriptor", [{}])[0]
+        md = md.get("name_id_format", [{}])
+
+        # TODO: proper subject_type handling in SATOSA
+        subject_type = data.subject_type
+        for nameid in md:
+            if nameid.get("text") in self.config:
+                subject_type = nameid.get("text")
+                break
+
+        if subject_type in self.config:
+            config = self.config[subject_type]
+            msg = "{} For subject_type {} using configuration {}".format(logprefix, subject_type, config)
+            logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
+            logger.debug(logline)
+
         # Obtain configuration details from the per-SP configuration or the default configuration
         try:
             if 'ordered_identifier_candidates' in config:
@@ -195,6 +217,12 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
                 replace_subject_id = self.config['replace_subject_id']
             else:
                 replace_subject_id = False
+            if 'replace_subject_type' in config:
+                replace_subject_type = config['replace_subject_type']
+            elif 'replace_subject_type' in self.config:
+                replace_subject_type = self.config['replace_subject_type']
+            else:
+                replace_subject_type = False
             if 'ignore' in config:
                 ignore = True
             else:
@@ -271,6 +299,15 @@ class PrimaryIdentifier(satosa.micro_services.base.ResponseMicroService):
             logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
             logger.debug(logline)
             data.subject_id = primary_identifier_val
+
+        # Replace subject_type if so configured.
+        if replace_subject_type:
+            msg = "{} Setting replace_subject_type to value {}".format(
+                logprefix, replace_subject_type
+            )
+            logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
+            logger.debug(logline)
+            data.subject_type = replace_subject_type
 
         msg = "{} returning data.attributes {}".format(logprefix, str(data.attributes))
         logline = lu.LOG_FMT.format(id=lu.get_session_id(context.state), message=msg)
