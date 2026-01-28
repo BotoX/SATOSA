@@ -8,7 +8,7 @@ import hashlib
 import json
 import logging
 from collections import UserDict
-from satosa.cookies import SimpleCookie
+from satosa.cookies import SimpleCookie, parse_cookie
 from uuid import uuid4
 
 from lzma import LZMACompressor, LZMADecompressor
@@ -197,8 +197,8 @@ def cookie_to_state(cookie_str: str, name: str, encryption_key: str) -> State:
     :return: A state
     """
     try:
-        cookie = SimpleCookie(cookie_str)
-        state = State(cookie[name].value, encryption_key)
+        cookie = parse_cookie(cookie_str)
+        state = State(cookie[name], encryption_key)
     except KeyError as e:
         msg = f'No cookie named {name} in {cookie_str}'
         raise SATOSAStateError(msg) from e
